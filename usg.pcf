@@ -1,0 +1,24 @@
+set_io clk_100MHz 49
+set_io led1 110
+set_io led2 93
+set_io led3 94
+# These drive the microspectrometer chip
+set_io SCLK 134
+set_io SST 138
+# This is for convenience triggering the oscilloscope
+set_io OTRIG 141
+
+# These connect to /dev/ttyAMA0, but from FPGA's pov (tx is FPGA output)
+set_io rx 113
+set_io tx 112
+# These connect to raspi SPI0 : raspi is the bus master
+set_io slmosi 90
+set_io slmiso 87
+set_io slsck 79
+set_io slce0n 85
+set_io slce1n 78
+# last for oscilloscope testing
+set_io test 1
+set_io test2 136
+
+
