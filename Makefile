@@ -11,7 +11,7 @@ icezprog: icezprog.c
 	gcc -o icezprog -Wall -Os icezprog.c -lwiringPi -lrt -lstdc++
 
 usg.json: top.v serial.v ctrl_reg_antilatch.v ctrl_opcodes.v pulsegen.v 
-	yowasp-yosys -p 'synth_ice40 -top top -json usg.json' top.v serial.v pulsegen.v 
+	yowasp-yosys -q -p 'synth_ice40 -top top -json usg.json' top.v serial.v pulsegen.v 
 
 usg.asc: usg.json usg.pcf
 	#arachne-pnr -d 8k -P tq144:4k -p usg.pcf -o usg.asc usg.blif

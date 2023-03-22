@@ -28,7 +28,7 @@ module fifo #(
 	input read_i,
 	input write_i,
 	input [DATA_WIDTH-1:0] data_i,
-	output [DATA_WIDTH-1:0] data_o,
+	output reg [DATA_WIDTH-1:0] data_o,
 	output fifoFull_o,
 	output fifoEmpty_o
 );
@@ -40,6 +40,10 @@ wire [ADDR_MSB:0] writeAddr = writePtr[ADDR_MSB:0];
 wire [ADDR_MSB:0] readAddr = readPtr[ADDR_MSB:0]; 
 
 always @(posedge clk) begin
+    data_o <= data_o;
+    readPtr <= readPtr;
+    writePtr <= writePtr;
+
 	if (~nreset) begin
 		readPtr     <= 0;
 		writePtr    <= 0;
@@ -237,6 +241,7 @@ reg [15:0 ] x, y; // write back words:
 wire[4:1] tohex = x[15:12];
 wire[8:1] hexd = {(tohex>9)?4'b0110:4'b0011,(tohex>9)?tohex - 4'd9:tohex};
 
+`include "./ctrl_reg_def.v"
 
 always @(posedge clk)
 begin
@@ -252,8 +257,8 @@ begin
     // end anti-latch section
     if (nrxs)
         case (rxchar[8:5]) // this reads ascii 0123456789abcdef as a nibble. Char will still get echoed as-is. Up to you to always send in groups of 4.
-            4'b0110: if (rxchar[4:1] < 4'd7)  fr <= {fr[91:0], rxchar[4:1]+4'd9}; // use only lowercase a-f not A-F!
-            4'b0011: if (rxchar[4:1] < 4'd10) fr <= {fr[91:0], rxchar[4:1]}; // 0-9
+            4'b0110: if (rxchar[4:1] < 4'd7)  fr <= {fr[27:0], rxchar[4:1]+4'd9}; // use only lowercase a-f not A-F!
+            4'b0011: if (rxchar[4:1] < 4'd10) fr <= {fr[27:0], rxchar[4:1]}; // 0-9
         endcase // wrote r with rxchar hex digit as binary nibble shifted in big-endian order
 
   casez (pstate)

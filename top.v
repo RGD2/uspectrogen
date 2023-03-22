@@ -1,7 +1,7 @@
 
 module top (
 	input clk_100MHz,
-      	output reg led1, led2, led3,
+      	output led1, led2, led3,
 	output reg SCLK, SST, OTRIG,
 	input rx,
 	output tx,
@@ -58,9 +58,9 @@ module top (
 	end
 
 
-    reg [31:0] exposure;
-    controller cntrl (.clk(clk), .resetn(resetn), .rx(rx), .tx(tx));
+    controller ctrl (.clk(clk), .resetn(resetn), .rx(rx), .tx(tx));
 
+    assign {led1,led2,led3} = ctrl.ledreg;
 	
     reg [31:0] time;
     reg utick;
@@ -69,7 +69,6 @@ module top (
         utick <= (time[11:0]==0); // 102 us ticks
     end
     
-    assign led = time[13:11];
 
     reg [2:0] fc; // fast clock
     always @(posedge clk) begin
@@ -109,7 +108,7 @@ module top (
                         cntr <= 32'd5;
                         SST <= 1'b1;
                     end
-                    1: cntr <= exposure;
+                    1: cntr <= ctrl.exposure;
                     2: begin
                         cntr <= 32'd88;
                         SST <= 1'b0;
@@ -125,10 +124,10 @@ module top (
     end
 
     
-    assign slmiso = lsmosi; // Loopback for SPI testing
+    assign slmiso = slmosi; // Loopback for SPI testing
 
     // LED diagnostics - makes a single clk pulse visible
-    pulsegen visibleblink1 (.sysclk(clk), .step(utick), .trigger(led[1]), .preset(16'd410), .pulse(led1));
-    pulsegen visibleblink2 (.sysclk(clk), .step(utick), .trigger(led[2]), .preset(16'd410), .pulse(led2));
-    pulsegen visibleblink3 (.sysclk(clk), .step(utick), .trigger(led[3]), .preset(16'd410), .pulse(led3));
+    //pulsegen visibleblink1 (.sysclk(clk), .step(utick), .trigger(led[1]), .preset(16'd410), .pulse(led1));
+    //pulsegen visibleblink2 (.sysclk(clk), .step(utick), .trigger(led[2]), .preset(16'd410), .pulse(led2));
+    //pulsegen visibleblink3 (.sysclk(clk), .step(utick), .trigger(led[3]), .preset(16'd410), .pulse(led3));
 endmodule

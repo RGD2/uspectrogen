@@ -18,7 +18,7 @@
 ".": x <= y; // lower word readback, append after command codes that sample 32 bit data.
 
 // Append custom cases after here
-// Access via 'top.' prefix for top level defined regs, 
-// or use top.instname. prefix for reading signals within modules
-"E": top.exposure <= fr;
+"E": exposure <= fr;
+"L": ledreg <= r;
+
 
