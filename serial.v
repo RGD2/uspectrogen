@@ -218,7 +218,9 @@ assign en_txqclk = (txctr > 0);
 endmodule
 
 
-module controller(input clk, input resetn, input rx, output reg tx);
+module controller(input clk, input resetn, input rx, 
+`include "./ctrl_ports.v"
+    output reg tx);
 
 wire nrxs;
 wire[7:0] rxbyte;
@@ -240,8 +242,6 @@ reg [15:0 ] x, y; // write back words:
 
 wire[4:1] tohex = x[15:12];
 wire[8:1] hexd = {(tohex>9)?4'b0110:4'b0011,(tohex>9)?tohex - 4'd9:tohex};
-
-`include "./ctrl_reg_def.v"
 
 always @(posedge clk)
 begin

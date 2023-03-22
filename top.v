@@ -58,9 +58,11 @@ module top (
 	end
 
 
-    controller ctrl (.clk(clk), .resetn(resetn), .rx(rx), .tx(tx));
+    wire [2:0] ledreg;
+    wire [31:0] exposure;
+    controller ctrl (.clk(clk), .resetn(resetn), .rx(rx), .tx(tx), .ledreg(ledreg), .exposure(exposure));
 
-    assign {led1,led2,led3} = ctrl.ledreg;
+    assign {led1,led2,led3} = ledreg;
 	
     reg [31:0] time;
     reg utick;
@@ -108,7 +110,7 @@ module top (
                         cntr <= 32'd5;
                         SST <= 1'b1;
                     end
-                    1: cntr <= ctrl.exposure;
+                    1: cntr <= exposure;
                     2: begin
                         cntr <= 32'd88;
                         SST <= 1'b0;
