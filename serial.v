@@ -1,11 +1,12 @@
-// Contains simple byte-based rx/tx support for the command interface.
-// modularized because it became stable and requires no further changes, and has small interfaces.
+// Contains simple byte-based serial controller
+// For uploading/downloading hex data and generally
+// driving an FPGA design via a serial port
 
-// This runs on the RS422 full-duplex port on the RasPi
-// The simplest possible 'core' between the two is to just connect one to the other
-// and observe that all data is looped back intact.
+// This runs on the RS232 full-duplex port on the RasPi
 
 // Needs to run internally at 4x the selected baud rate
+
+// Currently assuming 40 MHz main clk
 
 // 40 / 2.5= 16/4 = 5
 // 2.5M baud is 'fastest mode'
@@ -13,6 +14,52 @@
 // will be == to the max count.
 
 `define BAUDMAX 5'd4
+
+
+module fifo #(
+	parameter DATA_WIDTH = 8,
+	parameter FIFO_DEPTH = 256, 
+	parameter PTR_MSB    = 8,
+	parameter ADDR_MSB   = 7
+)
+(
+	input clk,
+	input nreset,
+	input read_i,
+	input write_i,
+	input [DATA_WIDTH-1:0] data_i,
+	output [DATA_WIDTH-1:0] data_o,
+	output fifoFull_o,
+	output fifoEmpty_o
+);
+
+reg [DATA_WIDTH-1:0] memory [0:FIFO_DEPTH-1];
+initial memory[0] <= -1; // fill first cell to let Yosys infer a BRAM
+reg [PTR_MSB:0] readPtr, writePtr;
+wire [ADDR_MSB:0] writeAddr = writePtr[ADDR_MSB:0];
+wire [ADDR_MSB:0] readAddr = readPtr[ADDR_MSB:0]; 
+
+always @(posedge clk) begin
+	if (~nreset) begin
+		readPtr     <= 0;
+		writePtr    <= 0;
+	end else begin
+		if(write_i && ~fifoFull_o)begin
+			memory[writeAddr] <= data_i;
+			writePtr <= writePtr + 1;
+		end
+		if(read_i && ~fifoEmpty_o)begin
+			data_o <= memory[readAddr];
+			readPtr <= readPtr + 1;
+		end
+	end
+end
+
+assign fifoEmpty_o = (writePtr == readPtr) ? 1'b1: 1'b0;
+assign fifoFull_o  = ((writePtr[ADDR_MSB:0] == readPtr[ADDR_MSB:0])&(writePtr[PTR_MSB] != readPtr[PTR_MSB])) ? 1'b1 : 1'b0;
+
+endmodule
+
 
 module serialrx(input clk, rxserialin, output reg newrxstrobe, output reg[7:0] rxbyte);
 
@@ -165,3 +212,96 @@ assign en_txqclk = (txctr > 0);
 //full duplex, not needed:  assign rstri =  ~(txctr > 0); // not in tristate if transmitting
 
 endmodule
+
+
+module controller(input clk, input resetn, input rx, output reg tx);
+
+wire nrxs;
+wire[7:0] rxbyte;
+serialrx srx_inst(.clk(clk), .rxserialin(rx), .newrxstrobe(nrxs), .rxbyte(rxbyte)); 
+
+wire [8:1] rxchar = rxbyte;
+
+reg xmit; 
+reg [8:1] txchar;
+reg [2:0] pstate;
+reg [31:0] fr; // main control register for writing
+// adjust to accommodate longest vector/array you need to write at once
+// eg: 95:0 works
+// gets autopopulated with ascii-hex chars arriving over serial.
+wire [15:0] r = fr[15:0]; // lowest 'word' of R, used all over.
+
+reg [15:0 ] x, y; // write back words:
+// set in specific cases, eg, x <= 16'... {x,y} <= 32'...
+
+wire[4:1] tohex = x[15:12];
+wire[8:1] hexd = {(tohex>9)?4'b0110:4'b0011,(tohex>9)?tohex - 4'd9:tohex};
+
+
+always @(posedge clk)
+begin
+    // defaults (values to have each cycle, if not otherwise overridden)
+    xmit <= 1;
+    txchar <= hexd;
+    pstate <= pstate + 1;
+    // begin anti-latch section for control registers
+    x <= x;
+    y <= y; // low word temp for atomic 32bit quantity reads - just a temporary register, only 16bit reads are default.
+    fr <= fr;
+    `include "./ctrl_reg_antilatch.v"
+    // end anti-latch section
+    if (nrxs)
+        case (rxchar[8:5]) // this reads ascii 0123456789abcdef as a nibble. Char will still get echoed as-is. Up to you to always send in groups of 4.
+            4'b0110: if (rxchar[4:1] < 4'd7)  fr <= {fr[91:0], rxchar[4:1]+4'd9}; // use only lowercase a-f not A-F!
+            4'b0011: if (rxchar[4:1] < 4'd10) fr <= {fr[91:0], rxchar[4:1]}; // 0-9
+        endcase // wrote r with rxchar hex digit as binary nibble shifted in big-endian order
+
+  casez (pstate)
+    3'd0:
+    begin
+        pstate <= nrxs ? 1 : 0;
+        xmit <= 0;
+    end
+    3'd1:
+    begin
+        txchar <= " "; // reception of a command: echos back everything by default 
+        // But all recognised commands will echo a space on reception... so can scan for codes recognized that way.
+        // anything echoed back: not recognized as a command.
+        // scanning like that is unsafe however, so should not be routine.
+        pstate <= 3'd3; // x will be written back in ' x0000' format by default case. 
+        // unless skipped by setting pstate <= 3'd0 in specific cases.
+    // reset indentation: Other code may want to search this file
+    // so as to gather the opcodes in use automatically.
+    // E.G. getCommandCodesInUse.sh
+case (rxchar) // defines the 'operation codes' each is replaced with x, sent back in 
+// This is the main section you may wish to modify as needed.
+// keep clear of 0123456789abcdef -> these are recognised in groups of four to set the register 'r'
+//OPS begin opcode section
+
+`include "./ctrl_opcodes.v"
+
+//EOC end opcode section
+default: begin 
+    txchar <= rxchar; // ensures that unrecognized chars just get echoed back -> confirms loop is working.
+    pstate <= 3'd0;
+end
+
+endcase
+    end
+    // continue pstate case statement: these extra states move digits.
+    3'd3: txchar <= "x";
+    default: x <= {x[11:0],4'd0};
+  endcase
+
+end
+// N.B. Could triple efficiency by sending data back in raw binary format
+// which may be useful if BW becomes limited.
+// It may also be useful if interfacing to a microcontroller
+// which will prefer raw data bytes and not to have to worry about 
+// ASCII encoding. But sending it encoded this way makes debugging much easier,
+// because you can just use a serial terminal program, and so it is a fairly common practice.
+
+
+serialtx stx_inst (.clk(clk), . resetn(resetn), .xmit(xmit), .txchar(txchar), .rsout(tx));
+endmodule
+

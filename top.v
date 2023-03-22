@@ -57,26 +57,10 @@ module top (
 		resetn <= &resetstate;
 	end
 
-	// serial receiver
-    wire [7:0] rxbyte;
-    wire newrx;
-	serialrx rxer (.clk(clk), .rxserialin(rx), .newrxstrobe(newrx), .rxbyte(rxbyte));
-    
-	// rxfifo
-	//
-    reg read_i;  // control from state machine
-	wire [7:0] data_o;
-	wire fifoFull_o, fifoEmpty_o;
-	fifo rxqueue(
-		.clk(clk),
-		.nreset(resetn),
-		.read_i(read_i),
-		.write_i(newrx),
-		.data_i(rxbyte),
-		.data_o(data_o),
-		.fifoFull_o(fifoFull_o),
-		.fifoEmpty_o(fifoEmpty_o)
-	);
+
+    reg [31:0] exposure;
+    controller cntrl (.clk(clk), .resetn(resetn), .rx(rx), .tx(tx));
+
 	
     reg [31:0] time;
     reg utick;
@@ -84,45 +68,62 @@ module top (
         time <= time + 1;
         utick <= (time[11:0]==0); // 102 us ticks
     end
+    
+    assign led = time[13:11];
 
     reg [2:0] fc; // fast clock
     always @(posedge clk) begin
         fc <= fc + 1;
     end
-    wire tic = fc[2]; // 5 MHz clk
 
-    always @(tic) begin
+    reg tic, tic_;
+    always @(posedge clk) begin
+        {tic_, tic} <= {tic, fc[2]};
+    end
+    wire tick = tic>tic_; // 5 MHz flag
+
+
+    always @(posedge clk) begin
         SCLK <= ~tic;
     end
 
-    // serial loopback (for testing)
-    serialtx testloop (.clk(clk), .resetn(resetn), .xmit(newrx), .txchar(rxbyte), .rsout(tx));
-
-    assign test = tx;
 
     // main FSM
-    reg [8:0] plscnt;
+    // controls SST, OTRIG
 
-    always @(posedge tic) begin
-        if (plscnt == 9'd380) begin
-            plscnt <= 0;
-        end else begin
-            plscnt <= plscnt + 1;
+    reg [31:0] cntr;
+    reg [1:0] state;
+
+    always @(posedge clk) begin
+        SST <= SST;
+        OTRIG <= 1'b0; // default, will be 1-shot
+        cntr <= cntr;
+        state <= state;
+
+        if (tick) begin
+            if (cntr) begin
+                cntr <= cntr  - 1;
+            end else begin
+                case (state)
+                    0: begin
+                        cntr <= 32'd5;
+                        SST <= 1'b1;
+                    end
+                    1: cntr <= exposure;
+                    2: begin
+                        cntr <= 32'd88;
+                        SST <= 1'b0;
+                    end
+                    3: begin
+                        cntr <= 32'd286;
+                        OTRIG <= 1'b1;
+                    end
+                endcase
+                state <= state + 1;
+            end
         end
     end
 
-    always @(plscnt) begin
-        if (plscnt < 9'd6 )
-            SST <= 1'b1;
-        else
-            SST <= 1'b0;
-
-        if (plscnt == 9'd88)
-            OTRIG <= 1'b1;
-        else
-            OTRIG <= 1'b0;
-
-    end
     
     assign slmiso = lsmosi; // Loopback for SPI testing
 
